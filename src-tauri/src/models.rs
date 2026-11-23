@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ConnectionProfile {
     pub id: String,
     pub name: String,
@@ -12,6 +13,7 @@ pub struct ConnectionProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DictationConfig {
     pub provider: String, // "groq" | "openai" | "custom"
     pub api_key: String,
@@ -22,6 +24,7 @@ pub struct DictationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UiConfig {
     pub theme: String,        // "obsidian" | "terminal" | "midnight" | "slate"
     pub accent: String,       // "emerald" | "cyan" | "amber" | "violet"
@@ -37,6 +40,7 @@ pub struct UiConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
     pub profiles: Vec<ConnectionProfile>,
     pub active_profile_id: String,

@@ -22,9 +22,15 @@ export function renderSettingsView(
           <div class="card">
             <div class="card-title">
               <span>🌐 Bağlantı Profilleri (Yerel & VDS)</span>
-              <div style="display:flex;gap:6px">
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
                 <button class="btn sm" id="btn-add-profile">+ Yeni Profil</button>
-                <button class="btn sm primary" id="btn-test-conn">⚡ Bağlantıyı Test Et</button>
+                ${
+                  draft.profiles.length > 1
+                    ? `<button class="btn sm danger" id="btn-del-profile" title="Seçili profili sil">🗑️ Sil</button>`
+                    : ""
+                }
+                <button class="btn sm" id="btn-test-conn">⚡ Bağlantıyı Test Et</button>
+                <button class="btn sm primary" id="btn-save-profile">💾 Kaydet</button>
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
@@ -215,11 +221,36 @@ export function renderSettingsView(
       render();
     });
 
+    container.querySelector("#btn-del-profile")?.addEventListener("click", async () => {
+      if (draft.profiles.length <= 1) return;
+      syncDraft();
+      const idx = draft.profiles.findIndex((p) => p.id === draft.active_profile_id);
+      if (idx === -1) return;
+      const target = draft.profiles[idx];
+      if (!window.confirm(`"${target.name}" profili silinsin mi?`)) return;
+      draft.profiles.splice(idx, 1);
+      draft.active_profile_id = draft.profiles[0].id;
+      await onSave(JSON.parse(JSON.stringify(draft)));
+      showToast(`"${target.name}" profili silindi.`);
+      render();
+    });
+
+    container.querySelector("#btn-save-profile")?.addEventListener("click", async () => {
+      syncDraft();
+      await onSave(JSON.parse(JSON.stringify(draft)));
+      showToast("Bağlantı profili kaydedildi ve uygulandı.");
+    });
+
     container.querySelector("#btn-test-conn")?.addEventListener("click", async () => {
       syncDraft();
       const prof = draft.profiles.find((p) => p.id === draft.active_profile_id) || draft.profiles[0];
       const res = await api.testConnection(prof);
-      showToast(res.message, !res.ok);
+      if (res.ok) {
+        await onSave(JSON.parse(JSON.stringify(draft)));
+        showToast(`${res.message} · Profil otomatik kaydedildi.`);
+      } else {
+        showToast(res.message, true);
+      }
     });
 
     container.querySelector("#btn-check-update")?.addEventListener("click", async () => {
@@ -228,7 +259,7 @@ export function renderSettingsView(
 
     container.querySelector("#btn-save-settings")?.addEventListener("click", async () => {
       syncDraft();
-      await onSave(draft);
+      await onSave(JSON.parse(JSON.stringify(draft)));
       showToast("Ayarlar kaydedildi ve uygulandı.");
     });
   };

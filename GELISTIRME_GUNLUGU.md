@@ -66,6 +66,10 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 
 ## 3. Sürüm ve Değişiklik Günlüğü
 
+### `v1.1.1` — 2026-11-23
+- **Kalıcı VDS / ayar koruması (`src-tauri/src/models.rs`, `src-tauri/src/config.rs`):** Tüm ayar yapılarına `#[serde(default)]` eklendi; gelecek güncellemelerde yeni ayar alanı eklense bile mevcut `settings.json` ve kayıtlı VDS profilleri/token'ları korunur. Atomik yazma (`.tmp` → rename), otomatik `.bak` yedeği ve bozuk dosya durumunda yedekten kurtarma eklendi.
+- **Bağlantı profili kaydetme iyileştirmesi (`src/views/settings.ts`):** Bağlantı Profilleri kartına doğrudan **Kaydet** ve **Sil** butonları eklendi; **Bağlantıyı Test Et** başarılı olduğunda profil otomatik kaydedilir.
+
 ### `v1.1.0` — 2026-11-23
 - **Windows otomatik masaüstü kısayolu:** NSIS kurulumuna (`src-tauri/nsis/hooks.nsh`) kurulum sonrası otomatik masaüstü kısayolu oluşturma ve kaldırma sırasında temizleme eklendi (WiX/MSI ile birlikte her iki Windows kurucusunda masaüstü simgesi oluşur).
 - **Ubuntu / Linux masaüstü simgesi ve menü entegrasyonu:** `.deb` paketi için özel `.desktop` şablonu (`src-tauri/linux/app-fabrikasi-ofis.desktop.hbs`) ile `postinst.sh` / `postrm.sh` betikleri eklendi; Ubuntu'da kurulumda masaüstü simgesi otomatik oluşturulur ve uygulama menüsüne eklenir.
