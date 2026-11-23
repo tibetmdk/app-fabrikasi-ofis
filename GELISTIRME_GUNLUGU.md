@@ -66,6 +66,11 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 
 ## 3. Sürüm ve Değişiklik Günlüğü
 
+### `v1.1.0` — 2026-11-23
+- **Windows otomatik masaüstü kısayolu:** NSIS kurulumuna (`src-tauri/nsis/hooks.nsh`) kurulum sonrası otomatik masaüstü kısayolu oluşturma ve kaldırma sırasında temizleme eklendi (WiX/MSI ile birlikte her iki Windows kurucusunda masaüstü simgesi oluşur).
+- **Ubuntu / Linux masaüstü simgesi ve menü entegrasyonu:** `.deb` paketi için özel `.desktop` şablonu (`src-tauri/linux/app-fabrikasi-ofis.desktop.hbs`) ile `postinst.sh` / `postrm.sh` betikleri eklendi; Ubuntu'da kurulumda masaüstü simgesi otomatik oluşturulur ve uygulama menüsüne eklenir.
+- **Dahili WebKitGTK bellek optimizasyonu:** `src-tauri/src/main.rs` içinde Linux açılışında `WEBKIT_DISABLE_DMABUF_RENDERER=1` otomatik ayarlanır (`baslat.sh` bağımlılığı kaldırıldı).
+
 ### `v1.0.0` — 2026-11-23
 - İlk kararlı sürüm GitHub'a (`tibetmdk/app-fabrikasi-ofis`) yayınlandı (Linux + Windows).
 - **Otomatik güncelleme** (`tauri-plugin-updater` + `tauri-plugin-process`) eklendi: açılışta kontrol, üst barda tek tıkla güncelleme butonu, Ayarlar sayfasında elle kontrol butonu.
