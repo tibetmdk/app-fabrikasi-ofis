@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability for App Fabrikası Ofisi","local":true,"windows":["main"],"permissions":["core:default","updater:default","process:default"]}}
