@@ -1,5 +1,6 @@
 use crate::models::{
     ActionResult, ArchiveOverview, ConnectionProfile, GraphData, NoteContent, OfficeSnapshot,
+    ProjectDiffResult, ProjectFileResult,
 };
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -195,6 +196,135 @@ pub async fn post_action(
         Err(e) => ActionResult {
             ok: false,
             message: format!("Bağlantı hatası: {e}"),
+        },
+    }
+}
+
+pub async fn fetch_project_file(
+    profile: &ConnectionProfile,
+    project_dir: &str,
+    rel_path: &str,
+) -> ProjectFileResult {
+    let Ok(c) = client() else {
+        return ProjectFileResult {
+            ok: false,
+            path: rel_path.to_string(),
+            lines: vec![],
+            total_lines: 0,
+            truncated: false,
+            error: Some("HTTP istemcisi hatası".to_string()),
+        };
+    };
+    let mut req = c
+        .get(build_url(&profile.remote_url, "/api/project-file"))
+        .query(&[("dir", project_dir), ("path", rel_path)]);
+    if !profile.remote_token.trim().is_empty() {
+        req = req.bearer_auth(profile.remote_token.trim());
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            resp.json::<ProjectFileResult>()
+                .await
+                .unwrap_or_else(|e| ProjectFileResult {
+                    ok: false,
+                    path: rel_path.to_string(),
+                    lines: vec![],
+                    total_lines: 0,
+                    truncated: false,
+                    error: Some(format!("Yanıt okunamadı: {e}")),
+                })
+        }
+        Ok(resp) if resp.status().as_u16() == 404 => ProjectFileResult {
+            ok: false,
+            path: rel_path.to_string(),
+            lines: vec![],
+            total_lines: 0,
+            truncated: false,
+            error: Some(
+                "VDS köprüsü (kopru.py) henüz güncellenmemiş — canlı dosya izleyici için VDS'deki kopru.py'yi güncelleyin."
+                    .to_string(),
+            ),
+        },
+        Ok(resp) => ProjectFileResult {
+            ok: false,
+            path: rel_path.to_string(),
+            lines: vec![],
+            total_lines: 0,
+            truncated: false,
+            error: Some(format!("Sunucu hatası: HTTP {}", resp.status())),
+        },
+        Err(e) => ProjectFileResult {
+            ok: false,
+            path: rel_path.to_string(),
+            lines: vec![],
+            total_lines: 0,
+            truncated: false,
+            error: Some(format!("Bağlantı hatası: {e}")),
+        },
+    }
+}
+
+pub async fn fetch_project_diff(
+    profile: &ConnectionProfile,
+    project_dir: &str,
+    rel_path: Option<&str>,
+) -> ProjectDiffResult {
+    let Ok(c) = client() else {
+        return ProjectDiffResult {
+            ok: false,
+            path: rel_path.map(String::from),
+            lines: vec![],
+            changed_files: vec![],
+            error: Some("HTTP istemcisi hatası".to_string()),
+        };
+    };
+    let mut query: Vec<(&str, &str)> = vec![("dir", project_dir)];
+    if let Some(rp) = rel_path {
+        if !rp.trim().is_empty() {
+            query.push(("path", rp));
+        }
+    }
+    let mut req = c
+        .get(build_url(&profile.remote_url, "/api/project-diff"))
+        .query(&query);
+    if !profile.remote_token.trim().is_empty() {
+        req = req.bearer_auth(profile.remote_token.trim());
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            resp.json::<ProjectDiffResult>()
+                .await
+                .unwrap_or_else(|e| ProjectDiffResult {
+                    ok: false,
+                    path: rel_path.map(String::from),
+                    lines: vec![],
+                    changed_files: vec![],
+                    error: Some(format!("Yanıt okunamadı: {e}")),
+                })
+        }
+        Ok(resp) if resp.status().as_u16() == 404 => ProjectDiffResult {
+            ok: false,
+            path: rel_path.map(String::from),
+            lines: vec![],
+            changed_files: vec![],
+            error: Some(
+                "VDS köprüsü (kopru.py) henüz güncellenmemiş — canlı diff izleyici için VDS'deki kopru.py'yi güncelleyin."
+                    .to_string(),
+            ),
+        },
+        Ok(resp) => ProjectDiffResult {
+            ok: false,
+            path: rel_path.map(String::from),
+            lines: vec![],
+            changed_files: vec![],
+            error: Some(format!("Sunucu hatası: HTTP {}", resp.status())),
+        },
+        Err(e) => ProjectDiffResult {
+            ok: false,
+            path: rel_path.map(String::from),
+            lines: vec![],
+            changed_files: vec![],
+            error: Some(format!("Bağlantı hatası: {e}")),
         },
     }
 }

@@ -261,6 +261,92 @@ def scan_graph(root: Path):
     return {"nodes": nodes, "edges": edges, "groups": groups, "show_arrow": show_arrow}
 
 
+def _safe_project_dir(root: Path, raw_dir: str):
+    if not raw_dir:
+        return None
+    p = Path(os.path.expanduser(raw_dir)).resolve()
+    if not p.is_dir():
+        return None
+    home = Path.home().resolve()
+    if p.is_relative_to(root) or p.is_relative_to(home):
+        return p
+    return None
+
+
+def read_project_file_api(root: Path, raw_dir: str, rel_path: str):
+    proj = _safe_project_dir(root, raw_dir)
+    if not proj:
+        return {"ok": False, "path": rel_path, "lines": [], "total_lines": 0, "truncated": False, "error": "Proje klasörü bulunamadı."}
+    clean = rel_path.strip().lstrip("./").replace("\\", "/")
+    if not clean or ".." in clean:
+        return {"ok": False, "path": rel_path, "lines": [], "total_lines": 0, "truncated": False, "error": "Geçersiz dosya yolu."}
+    cand = Path(clean) if clean.startswith("/") else (proj / clean)
+    try:
+        target = cand.resolve()
+    except Exception:
+        return {"ok": False, "path": clean, "lines": [], "total_lines": 0, "truncated": False, "error": "Dosya çözümlenemedi."}
+    if not target.is_relative_to(proj) or not target.is_file():
+        return {"ok": False, "path": clean, "lines": [], "total_lines": 0, "truncated": False, "error": f"Dosya bulunamadı: {clean}"}
+    rel_display = target.relative_to(proj).as_posix()
+    try:
+        size = target.stat().st_size
+        with open(target, "rb") as f:
+            raw = f.read(256_000)
+        all_lines = raw.decode(errors="replace").splitlines()
+        total = len(all_lines)
+        truncated = size > 256_000 or total > 1500
+        return {
+            "ok": True,
+            "path": rel_display,
+            "lines": all_lines[:1500],
+            "total_lines": total,
+            "truncated": truncated,
+            "error": None,
+        }
+    except Exception as e:
+        return {"ok": False, "path": rel_display, "lines": [], "total_lines": 0, "truncated": False, "error": str(e)}
+
+
+def read_project_diff_api(root: Path, raw_dir: str, rel_path: str = ""):
+    proj = _safe_project_dir(root, raw_dir)
+    if not proj:
+        return {"ok": False, "path": rel_path or None, "lines": [], "changed_files": [], "error": "Proje klasörü bulunamadı."}
+    changed = []
+    try:
+        st = subprocess.run(["git", "-C", str(proj), "status", "--porcelain", "-uall"], capture_output=True, text=True, timeout=5)
+        if st.returncode == 0:
+            for line in st.stdout.splitlines():
+                if len(line) >= 4:
+                    fp = line[3:].strip().strip('"')
+                    if " -> " in fp:
+                        fp = fp.split(" -> ", 1)[1].strip('"')
+                    if fp:
+                        changed.append(fp)
+    except Exception:
+        pass
+    clean = rel_path.strip().lstrip("./").replace("\\", "/") if rel_path else ""
+    if ".." in clean:
+        clean = ""
+    cmd = ["git", "-C", str(proj), "diff", "--no-color", "-U3"]
+    if clean:
+        cmd.extend(["--", clean])
+    diff_lines = []
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            diff_lines = r.stdout.splitlines()[:1200]
+    except Exception:
+        pass
+    if not diff_lines and clean:
+        fres = read_project_file_api(root, raw_dir, clean)
+        if fres["ok"] and fres["lines"]:
+            cnt = min(len(fres["lines"]), 400)
+            diff_lines = ["--- /dev/null", f"+++ b/{fres['path']}", f"@@ -0,0 +1,{cnt} @@"] + [
+                f"+{l}" for l in fres["lines"][:400]
+            ]
+    return {"ok": True, "path": clean or None, "lines": diff_lines, "changed_files": changed, "error": None}
+
+
 def make_handler(root: Path, token: str):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
@@ -329,6 +415,14 @@ def make_handler(root: Path, token: str):
                 if ".." in a or "/" in a or ".." in f or "/" in f:
                     return self._send_json([], 400)
                 return self._send_json(tail_lines(root / "kayitlar" / "canli-arsiv" / a / f, 2000, 512_000))
+            if u.path == "/api/project-file":
+                pdir = q.get("dir", [""])[0]
+                rpath = q.get("path", [""])[0]
+                return self._send_json(read_project_file_api(root, pdir, rpath))
+            if u.path == "/api/project-diff":
+                pdir = q.get("dir", [""])[0]
+                rpath = q.get("path", [""])[0]
+                return self._send_json(read_project_diff_api(root, pdir, rpath))
             self._send_json({"error": "Bulunamadı"}, 404)
 
         def do_POST(self):

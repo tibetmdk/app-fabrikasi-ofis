@@ -217,6 +217,23 @@ export interface PollSnapshotResult {
   delta?: SnapshotDelta | null;
 }
 
+export interface ProjectFileResult {
+  ok: boolean;
+  path: string;
+  lines: string[];
+  total_lines: number;
+  truncated: boolean;
+  error: string | null;
+}
+
+export interface ProjectDiffResult {
+  ok: boolean;
+  path: string | null;
+  lines: string[];
+  changed_files: string[];
+  error: string | null;
+}
+
 export type TabId = "office" | "graph" | "project" | "archive" | "settings";
 
 export const AGENT_DEFS: { id: string; key: string; name: string; short: string }[] = [

@@ -66,6 +66,10 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 
 ## 3. Sürüm ve Değişiklik Günlüğü
 
+### `v1.3.0` — 2026-11-24
+- **Canlı Ajan Kod & Diff İzleyici (`src/views/office.ts`, `src-tauri/src/local.rs`, `src-tauri/src/remote.rs`, `server/kopru.py`):** Ajan odak modunda ekran ikiye bölünür; solda `🧠` düşünceler okunabilir kartlar ve `📝`/`📖` dosya satırları tıklanabilir bağlantılar olarak görünür, sağda ise ajanın dokunduğu dosyanın canlı `git diff`'i veya dosya içeriği otomatik takip (`⚡ Oto`) ile açılır.
+- **Hafif Gemini-tarzı akış animasyonu (`src/views/office.ts`, `src/styles/main.css`):** Canlı gelen yeni düşünce/log satırları ve yeni eklenen kod/diff satırları tek bir `requestAnimationFrame` kuyruğuyla akıcı şekilde yazılır (`▍` imleç + hafif parlama), geçmiş satırlar anında açılır, odak modundan çıkıldığında sıfır CPU tüketir.
+
 ### `v1.2.0` — 2026-11-24
 - **Windows canlı RAM ölçümü (`src-tauri/src/lib.rs`, `src/main.ts`):** Win32 `kernel32` (`CreateToolhelp32Snapshot` + `K32GetProcessMemoryInfo`) ile ana Rust süreci ve tüm alt `msedgewebview2.exe` süreç ağacının Private Bytes bellek kullanımı ölçülür; durum çubuğunda Windows'ta `WebView2`, Linux'ta `WebKit` olarak gösterilir.
 - **Bağlantı kopma & yeniden bağlanma dayanıklılığı (`src/main.ts`, `src-tauri/src/remote.rs`):** VDS erişilemez olduğunda üstel geri çekilme (2sn → 4sn → 8sn → 15sn → 30sn), üst barda canlı geri sayım (`↻ Yeniden bağlanılıyor (3sn)...`), tıklayıp anında tekrar deneme, eşzamanlı poll kilidi (`pollInFlight`), 4 sn TCP bağlantı zaman aşımı ve bağlantı geri geldiğinde bildirim toast'ı eklendi.
