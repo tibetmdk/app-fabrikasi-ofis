@@ -66,6 +66,10 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 
 ## 3. Sürüm ve Değişiklik Günlüğü
 
+### `v1.3.1` — 2026-11-24
+- **v1.3.0 canlı kod/diff izleyici ve akış animasyonu geri alındı (`src/views/office.ts`, `src/styles/main.css`, `src-tauri/src/*`, `server/kopru.py`):** Ajan odak modu tekrar temiz tek-panel (`v1.2.0`) tasarımına döndürüldü; kullanılmayan `/api/project-file` ve `/api/project-diff` uç noktaları kaldırıldı.
+- **Gerçekçi RAM uyarı eşikleri (`src/main.ts`):** Durum çubuğundaki RAM rozetinin renk eşikleri WebKitGTK/WebView2 taban kullanımına uygun olarak 300 MB (sarı) ve 450 MB (kırmızı) olarak güncellendi.
+
 ### `v1.3.0` — 2026-11-24
 - **Canlı Ajan Kod & Diff İzleyici (`src/views/office.ts`, `src-tauri/src/local.rs`, `src-tauri/src/remote.rs`, `server/kopru.py`):** Ajan odak modunda ekran ikiye bölünür; solda `🧠` düşünceler okunabilir kartlar ve `📝`/`📖` dosya satırları tıklanabilir bağlantılar olarak görünür, sağda ise ajanın dokunduğu dosyanın canlı `git diff`'i veya dosya içeriği otomatik takip (`⚡ Oto`) ile açılır.
 - **Hafif Gemini-tarzı akış animasyonu (`src/views/office.ts`, `src/styles/main.css`):** Canlı gelen yeni düşünce/log satırları ve yeni eklenen kod/diff satırları tek bir `requestAnimationFrame` kuyruğuyla akıcı şekilde yazılır (`▍` imleç + hafif parlama), geçmiş satırlar anında açılır, odak modundan çıkıldığında sıfır CPU tüketir.

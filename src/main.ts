@@ -438,8 +438,8 @@ function updateRamBadge(mem: MemoryStats) {
     ? `Canlı bellek (Private Bytes) — Rust: ${mem.rust_mb} MB · WebView2: ${mem.webkit_mb} MB`
     : `Canlı PSS bellek — Rust: ${mem.rust_mb} MB · WebKit: ${mem.webkit_mb} MB · Network: ${mem.network_mb} MB`;
   el.className = "ram-badge";
-  if (mem.total_mb >= 260) el.classList.add("err");
-  else if (mem.total_mb >= 180) el.classList.add("warn");
+  if (mem.total_mb >= 450) el.classList.add("err");
+  else if (mem.total_mb >= 300) el.classList.add("warn");
 }
 
 function applySnapshotDelta(base: OfficeSnapshot, d: SnapshotDelta): OfficeSnapshot {

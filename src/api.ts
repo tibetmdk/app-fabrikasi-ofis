@@ -9,8 +9,6 @@ import type {
   NoteContent,
   OfficeSnapshot,
   PollSnapshotResult,
-  ProjectDiffResult,
-  ProjectFileResult,
 } from "./types";
 
 export const api = {
@@ -32,10 +30,6 @@ export const api = {
     invoke<ActionResult>("control_factory", { action }),
   startDictation: () => invoke<void>("start_dictation"),
   stopDictation: () => invoke<string>("stop_dictation"),
-  getProjectFile: (projectDir: string, relPath: string) =>
-    invoke<ProjectFileResult>("get_project_file", { projectDir, relPath }),
-  getProjectDiff: (projectDir: string, relPath: string | null) =>
-    invoke<ProjectDiffResult>("get_project_diff", { projectDir, relPath }),
   testConnection: (profile: ConnectionProfile) =>
     invoke<ActionResult>("test_connection", { profile }),
 };

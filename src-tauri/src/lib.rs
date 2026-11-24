@@ -8,7 +8,7 @@ mod remote;
 use crate::dictation::{RecorderState, SharedRecorder};
 use crate::models::{
     ActionResult, AppSettings, ArchiveOverview, GraphData, MemoryStats, NoteContent,
-    OfficeSnapshot, PollSnapshotResult, ProjectDiffResult, ProjectFileResult, SnapshotDelta,
+    OfficeSnapshot, PollSnapshotResult, SnapshotDelta,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
@@ -613,46 +613,6 @@ async fn stop_dictation(state: State<'_, AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn get_project_file(
-    state: State<'_, AppState>,
-    project_dir: String,
-    rel_path: String,
-) -> Result<ProjectFileResult, String> {
-    let profile = {
-        let s = state.settings.read().unwrap();
-        config::active_profile(&s)
-    };
-    if profile.mode == "remote" {
-        Ok(remote::fetch_project_file(&profile, &project_dir, &rel_path).await)
-    } else {
-        tokio::task::spawn_blocking(move || local::read_project_file(&project_dir, &rel_path))
-            .await
-            .map_err(|e| e.to_string())
-    }
-}
-
-#[tauri::command]
-async fn get_project_diff(
-    state: State<'_, AppState>,
-    project_dir: String,
-    rel_path: Option<String>,
-) -> Result<ProjectDiffResult, String> {
-    let profile = {
-        let s = state.settings.read().unwrap();
-        config::active_profile(&s)
-    };
-    if profile.mode == "remote" {
-        Ok(remote::fetch_project_diff(&profile, &project_dir, rel_path.as_deref()).await)
-    } else {
-        tokio::task::spawn_blocking(move || {
-            local::read_project_diff(&project_dir, rel_path.as_deref())
-        })
-        .await
-        .map_err(|e| e.to_string())
-    }
-}
-
-#[tauri::command]
 async fn test_connection(profile: models::ConnectionProfile) -> ActionResult {
     if profile.mode == "remote" {
         let snap = remote::fetch_snapshot(&profile).await;
@@ -703,8 +663,6 @@ pub fn run() {
             control_factory,
             start_dictation,
             stop_dictation,
-            get_project_file,
-            get_project_diff,
             test_connection,
         ])
         .run(tauri::generate_context!())

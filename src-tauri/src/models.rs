@@ -255,22 +255,3 @@ pub struct PollSnapshotResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delta: Option<SnapshotDelta>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectFileResult {
-    pub ok: bool,
-    pub path: String,
-    pub lines: Vec<String>,
-    pub total_lines: usize,
-    pub truncated: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectDiffResult {
-    pub ok: bool,
-    pub path: Option<String>,
-    pub lines: Vec<String>,
-    pub changed_files: Vec<String>,
-    pub error: Option<String>,
-}
