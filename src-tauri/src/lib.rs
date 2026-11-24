@@ -109,7 +109,155 @@ fn measure_memory() -> MemoryStats {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(target_os = "windows", test))]
+fn collect_descendant_pids(root_pid: u32, pairs: &[(u32, u32)]) -> Vec<u32> {
+    let mut children_by_ppid: std::collections::HashMap<u32, Vec<u32>> =
+        std::collections::HashMap::new();
+    for &(pid, ppid) in pairs {
+        if pid != 0 && pid != ppid {
+            children_by_ppid.entry(ppid).or_default().push(pid);
+        }
+    }
+    let mut visited = std::collections::HashSet::new();
+    visited.insert(root_pid);
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(root_pid);
+    let mut descendants = Vec::new();
+    while let Some(curr) = queue.pop_front() {
+        if let Some(kids) = children_by_ppid.get(&curr) {
+            for &kid in kids {
+                if visited.insert(kid) {
+                    descendants.push(kid);
+                    queue.push_back(kid);
+                }
+            }
+        }
+    }
+    descendants
+}
+
+#[cfg(target_os = "windows")]
+mod win_mem {
+    use super::{collect_descendant_pids, MemoryStats};
+    use std::ffi::c_void;
+    use std::mem::{size_of, zeroed};
+
+    const TH32CS_SNAPPROCESS: u32 = 0x0000_0002;
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
+
+    #[repr(C)]
+    struct ProcessEntry32W {
+        dw_size: u32,
+        cnt_usage: u32,
+        th32_process_id: u32,
+        th32_default_heap_id: usize,
+        th32_module_id: u32,
+        cnt_threads: u32,
+        th32_parent_process_id: u32,
+        pc_pri_class_base: i32,
+        dw_flags: u32,
+        sz_exe_file: [u16; 260],
+    }
+
+    #[repr(C)]
+    struct ProcessMemoryCountersEx {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+        private_usage: usize,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateToolhelp32Snapshot(dw_flags: u32, th32_process_id: u32) -> *mut c_void;
+        fn Process32FirstW(h_snapshot: *mut c_void, lppe: *mut ProcessEntry32W) -> i32;
+        fn Process32NextW(h_snapshot: *mut c_void, lppe: *mut ProcessEntry32W) -> i32;
+        fn OpenProcess(dw_desired_access: u32, b_inherit_handle: i32, dw_process_id: u32)
+            -> *mut c_void;
+        fn CloseHandle(h_object: *mut c_void) -> i32;
+        fn K32GetProcessMemoryInfo(
+            process: *mut c_void,
+            ppsmem_counters: *mut ProcessMemoryCountersEx,
+            cb: u32,
+        ) -> i32;
+    }
+
+    fn read_process_mem_kb(pid: u32) -> f64 {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return 0.0;
+            }
+            let mut counters: ProcessMemoryCountersEx = zeroed();
+            counters.cb = size_of::<ProcessMemoryCountersEx>() as u32;
+            let ok = K32GetProcessMemoryInfo(handle, &mut counters, counters.cb);
+            CloseHandle(handle);
+            if ok == 0 {
+                return 0.0;
+            }
+            // PrivateUsage avoids double-counting shared DLLs across WebView2 processes
+            let bytes = if counters.private_usage > 0 {
+                counters.private_usage
+            } else {
+                counters.working_set_size
+            };
+            bytes as f64 / 1024.0
+        }
+    }
+
+    pub fn measure_memory() -> MemoryStats {
+        let my_pid = std::process::id();
+        let rust_kb = read_process_mem_kb(my_pid);
+        let mut pairs: Vec<(u32, u32)> = Vec::new();
+
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if !snap.is_null() && snap != INVALID_HANDLE_VALUE {
+                let mut entry: ProcessEntry32W = zeroed();
+                entry.dw_size = size_of::<ProcessEntry32W>() as u32;
+                if Process32FirstW(snap, &mut entry) != 0 {
+                    loop {
+                        pairs.push((entry.th32_process_id, entry.th32_parent_process_id));
+                        if Process32NextW(snap, &mut entry) == 0 {
+                            break;
+                        }
+                    }
+                }
+                CloseHandle(snap);
+            }
+        }
+
+        let mut webview_kb = 0.0;
+        for pid in collect_descendant_pids(my_pid, &pairs) {
+            webview_kb += read_process_mem_kb(pid);
+        }
+
+        let rust_mb = (rust_kb / 1024.0 * 10.0).round() / 10.0;
+        let webkit_mb = (webview_kb / 1024.0 * 10.0).round() / 10.0;
+        let total_mb = ((rust_kb + webview_kb) / 1024.0 * 10.0).round() / 10.0;
+        MemoryStats {
+            total_mb,
+            rust_mb,
+            webkit_mb,
+            network_mb: 0.0,
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn measure_memory() -> MemoryStats {
+    win_mem::measure_memory()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 fn measure_memory() -> MemoryStats {
     MemoryStats {
         total_mb: 0.0,
@@ -603,5 +751,24 @@ mod tests {
         let json = serde_json::to_string(&snap).unwrap();
         assert!(!json.contains("\"active_project\""));
         assert!(json.contains("\"all_projects\""));
+    }
+
+    #[test]
+    fn collect_descendant_pids_walks_multi_level_tree() {
+        // 100 (app) -> 200 (webview2 browser) -> 201, 202 (renderer/gpu)
+        // 999 (unrelated) -> 1000
+        let pairs = vec![
+            (100, 1),
+            (200, 100),
+            (201, 200),
+            (202, 200),
+            (300, 100),
+            (999, 1),
+            (1000, 999),
+            (200, 200), // self-parent edge case
+        ];
+        let mut desc = collect_descendant_pids(100, &pairs);
+        desc.sort();
+        assert_eq!(desc, vec![200, 201, 202, 300]);
     }
 }

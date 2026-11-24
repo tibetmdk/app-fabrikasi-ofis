@@ -34,7 +34,64 @@ let lastServiceFp = "";
 let lastProfileText = "";
 let lastTimerText = "";
 let pollTimer: number | null = null;
+let pollInFlight = false;
+let consecutiveFailures = 0;
+let wasDisconnected = false;
+let nextRetryAtMs = 0;
+let reconnectTicker: number | null = null;
 let lastMemCheckAt = 0;
+
+const BACKOFF_STEPS_MS = [2000, 4000, 8000, 15000, 30000];
+const IS_WINDOWS = /Windows/i.test(navigator.userAgent);
+
+function computeRetryDelayMs(failures: number, baseMs: number, hidden: boolean): number {
+  if (failures <= 0) {
+    return hidden ? Math.max(baseMs, 5000) : baseMs;
+  }
+  const step = BACKOFF_STEPS_MS[Math.min(failures - 1, BACKOFF_STEPS_MS.length - 1)];
+  return hidden ? Math.max(step, 10000) : step;
+}
+
+function stopReconnectTicker() {
+  if (reconnectTicker !== null) {
+    window.clearInterval(reconnectTicker);
+    reconnectTicker = null;
+  }
+}
+
+function renderReconnectPill() {
+  const svc = document.querySelector("#top-service") as HTMLElement | null;
+  const dot = document.querySelector("#top-dot") as HTMLElement | null;
+  if (!svc) return;
+  const errDetail = latestSnap?.error ? ` (${latestSnap.error})` : "";
+  if (pollInFlight && consecutiveFailures > 0) {
+    svc.className = "pill warn";
+    svc.textContent = "↻ Bağlanıyor...";
+    svc.title = `Bağlantı deneniyor${errDetail}`;
+    svc.style.cursor = "default";
+    if (dot) dot.className = "pulse-dot warn";
+    return;
+  }
+  if (consecutiveFailures > 0 && nextRetryAtMs > 0) {
+    const remSec = Math.max(1, Math.ceil((nextRetryAtMs - Date.now()) / 1000));
+    svc.className = "pill err";
+    svc.textContent = `↻ Yeniden bağlanılıyor (${remSec}sn)...`;
+    svc.title = `Bağlantı koptu${errDetail} — Hemen tekrar denemek için tıklayın`;
+    svc.style.cursor = "pointer";
+    if (dot) dot.className = "pulse-dot err";
+  }
+}
+
+function retryConnectionNow() {
+  if (pollInFlight) return;
+  if (pollTimer !== null) {
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  stopReconnectTicker();
+  nextRetryAtMs = 0;
+  pollTick();
+}
 
 function applyTheme(s: AppSettings) {
   document.documentElement.setAttribute("data-theme", s.ui.theme);
@@ -109,6 +166,12 @@ function buildShell() {
     });
   });
 
+  document.querySelector("#top-service")?.addEventListener("click", () => {
+    if (consecutiveFailures > 0 || (latestSnap && !latestSnap.connected)) {
+      retryConnectionNow();
+    }
+  });
+
   document.querySelector("#btn-update")?.addEventListener("click", () => {
     installPendingUpdate(showToast);
   });
@@ -169,11 +232,11 @@ function updateTopbar(snap: OfficeSnapshot) {
     if (prof) prof.textContent = profText;
   }
 
-  const svcFp = `${snap.connected}|${snap.service_status}|${snap.paused}`;
+  const svcFp = `${snap.connected}|${snap.service_status}|${snap.paused}|${snap.error || ""}`;
   if (svcFp !== lastServiceFp) {
     lastServiceFp = svcFp;
     const dot = document.querySelector("#top-dot");
-    const svc = document.querySelector("#top-service");
+    const svc = document.querySelector("#top-service") as HTMLElement | null;
     const pauseBtn = document.querySelector("#btn-pause") as HTMLButtonElement | null;
     const svcBtn = document.querySelector("#btn-svc-toggle") as HTMLButtonElement | null;
 
@@ -185,14 +248,26 @@ function updateTopbar(snap: OfficeSnapshot) {
     }
     if (svc) {
       if (!snap.connected) {
-        svc.className = "pill err";
-        svc.textContent = "✖ Bağlantı Yok";
+        if (consecutiveFailures > 0) {
+          renderReconnectPill();
+        } else {
+          svc.className = "pill err";
+          svc.textContent = "✖ Bağlantı Yok";
+          svc.title = snap.error
+            ? `${snap.error} — Hemen tekrar denemek için tıklayın`
+            : "Hemen tekrar denemek için tıklayın";
+          svc.style.cursor = "pointer";
+        }
       } else if (snap.service_status === "active") {
         svc.className = snap.paused ? "pill warn" : "pill ok";
         svc.textContent = snap.paused ? "⏸ DURAKLATILDI" : "● OFİS AÇIK";
+        svc.title = "";
+        svc.style.cursor = "default";
       } else {
         svc.className = "pill err";
         svc.textContent = `○ OFİS KAPALI (${snap.service_status})`;
+        svc.title = "";
+        svc.style.cursor = "default";
       }
     }
     if (pauseBtn) {
@@ -306,6 +381,11 @@ async function switchTab(tab: TabId) {
         settings = next;
         applyTheme(settings);
         lastSnapshotHash = "";
+        consecutiveFailures = 0;
+        wasDisconnected = false;
+        nextRetryAtMs = 0;
+        stopReconnectTicker();
+        lastServiceFp = "";
         latestSnap = await api.getSnapshot();
         latestSnap.active_project = latestSnap.all_projects[0] || null;
         updateTopbar(latestSnap);
@@ -351,9 +431,12 @@ function bindGlobalShortcuts() {
 function updateRamBadge(mem: MemoryStats) {
   const el = document.querySelector("#ram-badge") as HTMLElement | null;
   if (!el || mem.total_mb <= 0) return;
+  const webLabel = IS_WINDOWS ? "WebView2" : "WebKit";
   const netPart = mem.network_mb >= 1 ? ` · Net ${Math.round(mem.network_mb)}` : "";
-  el.textContent = `RAM ${Math.round(mem.total_mb)} MB (Rust ${Math.round(mem.rust_mb)} · WebKit ${Math.round(mem.webkit_mb)}${netPart})`;
-  el.title = `Canlı PSS bellek — Rust: ${mem.rust_mb} MB · WebKit: ${mem.webkit_mb} MB · Network: ${mem.network_mb} MB`;
+  el.textContent = `RAM ${Math.round(mem.total_mb)} MB (Rust ${Math.round(mem.rust_mb)} · ${webLabel} ${Math.round(mem.webkit_mb)}${netPart})`;
+  el.title = IS_WINDOWS
+    ? `Canlı bellek (Private Bytes) — Rust: ${mem.rust_mb} MB · WebView2: ${mem.webkit_mb} MB`
+    : `Canlı PSS bellek — Rust: ${mem.rust_mb} MB · WebKit: ${mem.webkit_mb} MB · Network: ${mem.network_mb} MB`;
   el.className = "ram-badge";
   if (mem.total_mb >= 260) el.classList.add("err");
   else if (mem.total_mb >= 180) el.classList.add("warn");
@@ -390,6 +473,12 @@ function applySnapshotDelta(base: OfficeSnapshot, d: SnapshotDelta): OfficeSnaps
 }
 
 async function pollTick() {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  if (consecutiveFailures > 0) {
+    renderReconnectPill();
+  }
+  let isConnected = true;
   try {
     const reqHash = latestSnap ? lastSnapshotHash : "";
     const res = await api.pollSnapshot(reqHash);
@@ -402,6 +491,20 @@ async function pollTick() {
     } else if (res.delta && latestSnap) {
       latestSnap = applySnapshotDelta(latestSnap, res.delta);
       updatedSnap = latestSnap;
+    }
+
+    isConnected = Boolean(latestSnap?.connected);
+    if (isConnected) {
+      if (wasDisconnected) {
+        wasDisconnected = false;
+        showToast("✅ Sunucu bağlantısı yeniden kuruldu.");
+      }
+      if (consecutiveFailures > 0) {
+        consecutiveFailures = 0;
+        nextRetryAtMs = 0;
+        stopReconnectTicker();
+        lastServiceFp = "";
+      }
     }
 
     if (updatedSnap) {
@@ -426,11 +529,24 @@ async function pollTick() {
       if (mem) updateRamBadge(mem);
     }
   } catch {
-    // Keep polling alive even if a transient IPC error occurs
+    isConnected = false;
   } finally {
+    pollInFlight = false;
     const baseMs = Math.max(600, Math.min(10000, settings?.ui?.poll_interval_ms || 1000));
-    const delay = document.hidden ? Math.max(baseMs, 5000) : baseMs;
-    pollTimer = window.setTimeout(pollTick, delay);
+    if (!isConnected) {
+      consecutiveFailures += 1;
+      wasDisconnected = true;
+      const delay = computeRetryDelayMs(consecutiveFailures, baseMs, document.hidden);
+      nextRetryAtMs = Date.now() + delay;
+      renderReconnectPill();
+      if (reconnectTicker === null) {
+        reconnectTicker = window.setInterval(renderReconnectPill, 1000);
+      }
+      pollTimer = window.setTimeout(pollTick, delay);
+    } else {
+      const delay = computeRetryDelayMs(0, baseMs, document.hidden);
+      pollTimer = window.setTimeout(pollTick, delay);
+    }
   }
 }
 
@@ -447,6 +563,10 @@ async function bootstrap() {
   if (initRes.snapshot) {
     initRes.snapshot.active_project = initRes.snapshot.all_projects[0] || null;
     latestSnap = initRes.snapshot;
+    if (!initRes.snapshot.connected) {
+      consecutiveFailures = 1;
+      wasDisconnected = true;
+    }
     updateTopbar(initRes.snapshot);
     officeView?.update(initRes.snapshot);
   }
@@ -454,17 +574,25 @@ async function bootstrap() {
   api.getMemoryStats().then(updateRamBadge).catch(() => {});
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
+    if (!document.hidden && !pollInFlight) {
       if (pollTimer !== null) {
         window.clearTimeout(pollTimer);
         pollTimer = null;
       }
+      stopReconnectTicker();
+      nextRetryAtMs = 0;
       pollTick();
     }
   });
 
   const baseMs = Math.max(600, Math.min(10000, settings?.ui?.poll_interval_ms || 1000));
-  pollTimer = window.setTimeout(pollTick, baseMs);
+  const initDelay = computeRetryDelayMs(consecutiveFailures, baseMs, document.hidden);
+  if (consecutiveFailures > 0) {
+    nextRetryAtMs = Date.now() + initDelay;
+    renderReconnectPill();
+    reconnectTicker = window.setInterval(renderReconnectPill, 1000);
+  }
+  pollTimer = window.setTimeout(pollTick, initDelay);
   window.setTimeout(() => checkForUpdates(showToast, true), 3000);
 }
 

@@ -66,6 +66,10 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 
 ## 3. Sürüm ve Değişiklik Günlüğü
 
+### `v1.2.0` — 2026-11-24
+- **Windows canlı RAM ölçümü (`src-tauri/src/lib.rs`, `src/main.ts`):** Win32 `kernel32` (`CreateToolhelp32Snapshot` + `K32GetProcessMemoryInfo`) ile ana Rust süreci ve tüm alt `msedgewebview2.exe` süreç ağacının Private Bytes bellek kullanımı ölçülür; durum çubuğunda Windows'ta `WebView2`, Linux'ta `WebKit` olarak gösterilir.
+- **Bağlantı kopma & yeniden bağlanma dayanıklılığı (`src/main.ts`, `src-tauri/src/remote.rs`):** VDS erişilemez olduğunda üstel geri çekilme (2sn → 4sn → 8sn → 15sn → 30sn), üst barda canlı geri sayım (`↻ Yeniden bağlanılıyor (3sn)...`), tıklayıp anında tekrar deneme, eşzamanlı poll kilidi (`pollInFlight`), 4 sn TCP bağlantı zaman aşımı ve bağlantı geri geldiğinde bildirim toast'ı eklendi.
+
 ### `v1.1.2` — 2026-11-24
 - **WebKitGTK RAM sızıntısı kesin çözümü (`src-tauri/tauri.conf.json`, `src-tauri/src/main.rs`):** CSP `connect-src` kuralına `ipc: http://ipc.localhost` eklendi; Tauri'nin `webview.eval()` yedeğine düşüp her snapshot'ta `WebKitSharedMemory` bloğu biriktirmesi engellendi. Linux açılışında glibc `MALLOC_*` optimizasyonları dahili olarak ayarlandı.
 - **Delta tabanlı `poll_snapshot` ve yük küçültme (`src-tauri/src/lib.rs`, `src-tauri/src/models.rs`, `src/main.ts`, `src/views/project.ts`):** `active_project` çift serileştirmesi kaldırıldı; `poll_snapshot` yalnızca değişen ajan loglarını ve değişen alanları (`SnapshotDelta`) gönderir.

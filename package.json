@@ -1,6 +1,6 @@
 {
   "name": "app-fabrikasi-ofis",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "App Fabrikası Ofisi — Masaüstü Komuta Merkezi (Linux & Windows)",
   "type": "module",
   "scripts": {

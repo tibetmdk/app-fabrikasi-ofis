@@ -12,6 +12,7 @@ fn client() -> Result<&'static reqwest::Client, String> {
         return Ok(c);
     }
     let built = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(4))
         .timeout(std::time::Duration::from_secs(8))
         .pool_max_idle_per_host(2)
         .build()
@@ -74,7 +75,16 @@ pub async fn fetch_snapshot(profile: &ConnectionProfile) -> OfficeSnapshot {
             Err(e) => empty_error_snapshot(profile, format!("Sunucu yanıtı okunamadı: {e}")),
         },
         Ok(resp) => empty_error_snapshot(profile, format!("Sunucu hatası: HTTP {}", resp.status())),
-        Err(e) => empty_error_snapshot(profile, format!("VDS bağlantısı kurulamadı: {e}")),
+        Err(e) => {
+            let msg = if e.is_timeout() {
+                "VDS yanıt vermedi (zaman aşımı)".to_string()
+            } else if e.is_connect() {
+                "VDS sunucusuna ulaşılamadı".to_string()
+            } else {
+                format!("VDS bağlantısı kurulamadı: {e}")
+            };
+            empty_error_snapshot(profile, msg)
+        }
     }
 }
 
