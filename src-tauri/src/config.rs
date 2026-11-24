@@ -77,6 +77,11 @@ impl Default for UiConfig {
 
 impl Default for AppSettings {
     fn default() -> Self {
+        #[cfg(target_os = "windows")]
+        let default_active = "vds".to_string();
+        #[cfg(not(target_os = "windows"))]
+        let default_active = "local".to_string();
+
         Self {
             profiles: vec![
                 ConnectionProfile::default(),
@@ -89,7 +94,7 @@ impl Default for AppSettings {
                     remote_token: String::new(),
                 },
             ],
-            active_profile_id: "local".to_string(),
+            active_profile_id: default_active,
             dictation: DictationConfig::default(),
             ui: UiConfig::default(),
         }
@@ -196,9 +201,87 @@ fn save_settings_to_path(settings: &AppSettings, path: &Path) -> Result<(), Stri
     Ok(())
 }
 
+fn try_apply_bootstrap_file(settings: &mut AppSettings, candidate: &Path) -> bool {
+    let Ok(raw) = fs::read_to_string(candidate) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    let url = val
+        .get("remote_url")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    let token = val
+        .get("remote_token")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if url.is_empty() || token.is_empty() {
+        return false;
+    }
+    let name = val
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("VDS Sunucu");
+
+    if let Some(p) = settings.profiles.iter_mut().find(|p| p.id == "vds") {
+        p.mode = "remote".to_string();
+        p.name = name.to_string();
+        p.remote_url = url.to_string();
+        p.remote_token = token.to_string();
+    } else {
+        settings.profiles.push(ConnectionProfile {
+            id: "vds".to_string(),
+            name: name.to_string(),
+            mode: "remote".to_string(),
+            local_root: String::new(),
+            remote_url: url.to_string(),
+            remote_token: token.to_string(),
+        });
+    }
+    settings.active_profile_id = "vds".to_string();
+    true
+}
+
+fn maybe_import_bootstrap(settings: &mut AppSettings, settings_file: &Path) {
+    let has_remote_token = settings
+        .profiles
+        .iter()
+        .any(|p| p.mode == "remote" && !p.remote_token.trim().is_empty());
+    if has_remote_token {
+        return;
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("app-fabrikasi-baglanti.json"));
+        }
+    }
+    if let Some(d) = dirs::desktop_dir() {
+        candidates.push(d.join("app-fabrikasi-baglanti.json"));
+    }
+    if let Some(d) = dirs::download_dir() {
+        candidates.push(d.join("app-fabrikasi-baglanti.json"));
+    }
+
+    for cand in candidates {
+        if cand.exists() && try_apply_bootstrap_file(settings, &cand) {
+            let _ = save_settings_to_path(settings, settings_file);
+            break;
+        }
+    }
+}
+
 pub fn load_settings() -> AppSettings {
     let path = settings_path();
-    load_settings_from_path(&path)
+    let mut settings = load_settings_from_path(&path);
+    maybe_import_bootstrap(&mut settings, &path);
+    settings
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {

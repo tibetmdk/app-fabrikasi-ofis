@@ -19,7 +19,7 @@ export function resetProjectViewCache() {
 }
 
 export function renderProjectView(container: HTMLElement, snap: OfficeSnapshot | null) {
-  const fp = snap ? JSON.stringify({ a: snap.active_project, all: snap.all_projects }) : "null";
+  const fp = snap ? JSON.stringify(snap.all_projects) : "null";
   if (fp === lastProjectFp && container.children.length > 0) return;
   lastProjectFp = fp;
   const prevScroll = container.querySelector(".page-scroll")?.scrollTop ?? 0;
@@ -38,7 +38,7 @@ export function renderProjectView(container: HTMLElement, snap: OfficeSnapshot |
     return;
   }
 
-  const p: ProjectInfo = snap.active_project || snap.all_projects[0];
+  const p: ProjectInfo = snap.all_projects[0];
   const doneCount = p.gorevler.filter((g) => g.adim === "tamam").length;
   const totalCount = p.gorevler.length;
   const pct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;

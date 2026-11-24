@@ -23,6 +23,8 @@ export function renderSettingsView(
             <div class="card-title">
               <span>🌐 Bağlantı Profilleri (Yerel & VDS)</span>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn sm" id="btn-export-conn" title="VDS bağlantı kodunu panoya kopyala (diğer cihaza tek tıkla aktarmak için)">📤 Kodu Kopyala</button>
+                <button class="btn sm" id="btn-import-conn" title="Diğer cihazdan kopyalanan bağlantı kodunu yapıştır">📥 Kodu Yapıştır</button>
                 <button class="btn sm" id="btn-add-profile">+ Yeni Profil</button>
                 ${
                   draft.profiles.length > 1
@@ -185,6 +187,80 @@ export function renderSettingsView(
     `;
 
     // Profile switching
+    container.querySelector("#btn-export-conn")?.addEventListener("click", async () => {
+      syncDraft();
+      const prof =
+        draft.profiles.find((p) => p.id === draft.active_profile_id && p.mode === "remote") ||
+        draft.profiles.find((p) => p.mode === "remote");
+      if (!prof || !prof.remote_url.trim() || !prof.remote_token.trim()) {
+        showToast("Dışa aktarılacak dolu bir VDS profili bulunamadı.", true);
+        return;
+      }
+      const payload = JSON.stringify({
+        name: prof.name,
+        remote_url: prof.remote_url.trim(),
+        remote_token: prof.remote_token.trim(),
+      });
+      const bytes = new TextEncoder().encode(payload);
+      let bin = "";
+      bytes.forEach((b) => (bin += String.fromCharCode(b)));
+      const code = `af-ofis-vds:${btoa(bin)}`;
+      try {
+        await navigator.clipboard.writeText(code);
+        showToast("Bağlantı kodu panoya kopyalandı. Diğer cihazda '📥 Kodu Yapıştır'a tıklayın.");
+      } catch {
+        window.prompt("Bağlantı kodunu kopyalayın:", code);
+      }
+    });
+
+    container.querySelector("#btn-import-conn")?.addEventListener("click", async () => {
+      const raw = window.prompt(
+        "Diğer cihazdan kopyaladığınız bağlantı kodunu (af-ofis-vds:...) veya JSON'u yapıştırın:"
+      );
+      if (!raw || !raw.trim()) return;
+      try {
+        const trimmed = raw.trim();
+        let jsonStr = trimmed;
+        if (trimmed.startsWith("af-ofis-vds:")) {
+          const b64 = trimmed.slice("af-ofis-vds:".length).trim();
+          const bin = atob(b64);
+          const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+          jsonStr = new TextDecoder().decode(bytes);
+        }
+        const parsed = JSON.parse(jsonStr);
+        const url = String(parsed.remote_url || "").trim();
+        const token = String(parsed.remote_token || "").trim();
+        const name = String(parsed.name || "VDS Sunucu").trim() || "VDS Sunucu";
+        if (!url || !token) {
+          showToast("Geçersiz bağlantı kodu (URL veya token eksik).", true);
+          return;
+        }
+        let vds = draft.profiles.find((p) => p.id === "vds");
+        if (!vds) {
+          vds = {
+            id: "vds",
+            name,
+            mode: "remote",
+            local_root: "",
+            remote_url: url,
+            remote_token: token,
+          };
+          draft.profiles.push(vds);
+        } else {
+          vds.name = name;
+          vds.mode = "remote";
+          vds.remote_url = url;
+          vds.remote_token = token;
+        }
+        draft.active_profile_id = vds.id;
+        await onSave(JSON.parse(JSON.stringify(draft)));
+        showToast("VDS bağlantısı içe aktarıldı ve kaydedildi!");
+        render();
+      } catch {
+        showToast("Bağlantı kodu çözülemedi. Kodu eksiksiz yapıştırdığınızdan emin olun.", true);
+      }
+    });
+
     container.querySelectorAll("[data-prof]").forEach((btn) => {
       btn.addEventListener("click", () => {
         syncDraft();

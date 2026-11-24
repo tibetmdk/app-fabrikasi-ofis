@@ -66,6 +66,11 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 
 ## 3. Sürüm ve Değişiklik Günlüğü
 
+### `v1.1.2` — 2026-11-24
+- **WebKitGTK RAM sızıntısı kesin çözümü (`src-tauri/tauri.conf.json`, `src-tauri/src/main.rs`):** CSP `connect-src` kuralına `ipc: http://ipc.localhost` eklendi; Tauri'nin `webview.eval()` yedeğine düşüp her snapshot'ta `WebKitSharedMemory` bloğu biriktirmesi engellendi. Linux açılışında glibc `MALLOC_*` optimizasyonları dahili olarak ayarlandı.
+- **Delta tabanlı `poll_snapshot` ve yük küçültme (`src-tauri/src/lib.rs`, `src-tauri/src/models.rs`, `src/main.ts`, `src/views/project.ts`):** `active_project` çift serileştirmesi kaldırıldı; `poll_snapshot` yalnızca değişen ajan loglarını ve değişen alanları (`SnapshotDelta`) gönderir.
+- **Tek tıkla VDS aktarımı ve Windows otomatik bağlantı (`src-tauri/src/config.rs`, `src/views/settings.ts`):** Windows'ta varsayılan profil `vds` yapıldı; açılışta `app-fabrikasi-baglanti.json` dosyasını (uygulama klasörü, Masaüstü veya İndirilenler) otomatik içe aktarma ve Ayarlar'da **📤 Kodu Kopyala / 📥 Kodu Yapıştır** eklendi.
+
 ### `v1.1.1` — 2026-11-23
 - **Kalıcı VDS / ayar koruması (`src-tauri/src/models.rs`, `src-tauri/src/config.rs`):** Tüm ayar yapılarına `#[serde(default)]` eklendi; gelecek güncellemelerde yeni ayar alanı eklense bile mevcut `settings.json` ve kayıtlı VDS profilleri/token'ları korunur. Atomik yazma (`.tmp` → rename), otomatik `.bak` yedeği ve bozuk dosya durumunda yedekten kurtarma eklendi.
 - **Bağlantı profili kaydetme iyileştirmesi (`src/views/settings.ts`):** Bağlantı Profilleri kartına doğrudan **Kaydet** ve **Sil** butonları eklendi; **Bağlantıyı Test Et** başarılı olduğunda profil otomatik kaydedilir.

@@ -1,6 +1,6 @@
 [package]
 name = "app-fabrikasi-ofis"
-version = "1.1.1"
+version = "1.1.2"
 description = "App Fabrikasi Ofisi - Masaustu Komuta Merkezi"
 authors = ["Tibet"]
 edition = "2021"

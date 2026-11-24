@@ -80,7 +80,7 @@ pub struct ManagerContext {
     pub son_ozet: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub id: i64,
     pub yon: String,
@@ -101,7 +101,7 @@ pub struct JobItem {
     pub hata: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectTask {
     pub id: String,
     pub adim: String,
@@ -111,7 +111,7 @@ pub struct ProjectTask {
     pub inceleme_duzeltmeleri: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub ad: String,
     pub klasor: String,
@@ -144,6 +144,8 @@ pub struct OfficeSnapshot {
     pub system_log: Vec<String>,
     pub messages: Vec<ChatMessage>,
     pub jobs: Vec<JobItem>,
+    #[allow(dead_code)]
+    #[serde(default, skip_serializing)]
     pub active_project: Option<ProjectInfo>,
     pub all_projects: Vec<ProjectInfo>,
     pub timestamp: f64,
@@ -218,7 +220,38 @@ pub struct ActionResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotDelta {
+    pub connected: bool,
+    pub error: Option<String>,
+    pub profile_name: String,
+    pub mode: String,
+    pub service_status: String,
+    pub paused: bool,
+    pub manager_session: Option<String>,
+    pub message_queue_count: usize,
+    pub manager_context: Option<ManagerContext>,
+    pub quotas: Vec<QuotaPool>,
+    pub active_agents: BTreeMap<String, ActiveAgentInfo>,
+    pub assigned_models: BTreeMap<String, String>,
+    pub jobs: Vec<JobItem>,
+    pub timestamp: f64,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_logs: BTreeMap<String, Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events_log: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_log: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages: Option<Vec<ChatMessage>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub all_projects: Option<Vec<ProjectInfo>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PollSnapshotResult {
     pub hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot: Option<OfficeSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta: Option<SnapshotDelta>,
 }

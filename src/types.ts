@@ -125,7 +125,7 @@ export interface OfficeSnapshot {
   system_log: string[];
   messages: ChatMessage[];
   jobs: JobItem[];
-  active_project: ProjectInfo | null;
+  active_project?: ProjectInfo | null;
   all_projects: ProjectInfo[];
   timestamp: number;
 }
@@ -189,9 +189,32 @@ export interface ActionResult {
   message: string;
 }
 
+export interface SnapshotDelta {
+  connected: boolean;
+  error: string | null;
+  profile_name: string;
+  mode: "local" | "remote";
+  service_status: string;
+  paused: boolean;
+  manager_session: string | null;
+  message_queue_count: number;
+  manager_context: ManagerContext | null;
+  quotas: QuotaPool[];
+  active_agents: Record<string, ActiveAgentInfo>;
+  assigned_models: Record<string, string>;
+  jobs: JobItem[];
+  timestamp: number;
+  agent_logs?: Record<string, string[]>;
+  events_log?: string[];
+  system_log?: string[];
+  messages?: ChatMessage[];
+  all_projects?: ProjectInfo[];
+}
+
 export interface PollSnapshotResult {
   hash: string;
-  snapshot: OfficeSnapshot | null;
+  snapshot?: OfficeSnapshot | null;
+  delta?: SnapshotDelta | null;
 }
 
 export type TabId = "office" | "graph" | "project" | "archive" | "settings";

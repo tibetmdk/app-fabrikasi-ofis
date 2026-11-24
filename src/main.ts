@@ -1,6 +1,13 @@
 import "./styles/main.css";
 import { api } from "./api";
-import { AGENT_DEFS, type AppSettings, type MemoryStats, type OfficeSnapshot, type TabId } from "./types";
+import {
+  AGENT_DEFS,
+  type AppSettings,
+  type MemoryStats,
+  type OfficeSnapshot,
+  type SnapshotDelta,
+  type TabId,
+} from "./types";
 import { esc, formatDuration } from "./utils";
 import { OfficeView } from "./views/office";
 import { GraphView } from "./views/graph";
@@ -228,7 +235,7 @@ function updateTopbar(snap: OfficeSnapshot) {
   }
 
   // Active project banner (only rebuild DOM when changed)
-  const p = snap.active_project;
+  const p = snap.active_project || snap.all_projects[0] || null;
   const done = p ? p.gorevler.filter((g) => g.adim === "tamam").length : 0;
   const total = p ? p.gorevler.length : 0;
   const projFp = p ? `${p.ad}|${p.asama_adi}|${done}/${total}` : "none";
@@ -300,6 +307,7 @@ async function switchTab(tab: TabId) {
         applyTheme(settings);
         lastSnapshotHash = "";
         latestSnap = await api.getSnapshot();
+        latestSnap.active_project = latestSnap.all_projects[0] || null;
         updateTopbar(latestSnap);
       },
       showToast
@@ -351,18 +359,58 @@ function updateRamBadge(mem: MemoryStats) {
   else if (mem.total_mb >= 180) el.classList.add("warn");
 }
 
+function applySnapshotDelta(base: OfficeSnapshot, d: SnapshotDelta): OfficeSnapshot {
+  base.connected = d.connected;
+  base.error = d.error;
+  base.profile_name = d.profile_name;
+  base.mode = d.mode;
+  base.service_status = d.service_status;
+  base.paused = d.paused;
+  base.manager_session = d.manager_session;
+  base.message_queue_count = d.message_queue_count;
+  base.manager_context = d.manager_context;
+  base.quotas = d.quotas;
+  base.active_agents = d.active_agents;
+  base.assigned_models = d.assigned_models;
+  base.jobs = d.jobs;
+  base.timestamp = d.timestamp;
+  if (d.agent_logs) {
+    for (const [rol, lines] of Object.entries(d.agent_logs)) {
+      base.agent_logs[rol] = lines;
+    }
+  }
+  if (d.events_log !== undefined) base.events_log = d.events_log;
+  if (d.system_log !== undefined) base.system_log = d.system_log;
+  if (d.messages !== undefined) base.messages = d.messages;
+  if (d.all_projects !== undefined) {
+    base.all_projects = d.all_projects;
+    base.active_project = d.all_projects[0] || null;
+  }
+  return base;
+}
+
 async function pollTick() {
   try {
-    const res = await api.pollSnapshot(lastSnapshotHash);
+    const reqHash = latestSnap ? lastSnapshotHash : "";
+    const res = await api.pollSnapshot(reqHash);
     lastSnapshotHash = res.hash;
+    let updatedSnap: OfficeSnapshot | null = null;
     if (res.snapshot) {
+      res.snapshot.active_project = res.snapshot.all_projects[0] || null;
       latestSnap = res.snapshot;
-      updateTopbar(res.snapshot);
+      updatedSnap = latestSnap;
+    } else if (res.delta && latestSnap) {
+      latestSnap = applySnapshotDelta(latestSnap, res.delta);
+      updatedSnap = latestSnap;
+    }
+
+    if (updatedSnap) {
+      updateTopbar(updatedSnap);
       if (currentTab === "office" && officeView) {
-        officeView.update(res.snapshot);
+        officeView.update(updatedSnap);
       } else if (currentTab === "project") {
         const main = document.querySelector("#main-content") as HTMLElement;
-        renderProjectView(main, res.snapshot);
+        renderProjectView(main, updatedSnap);
       }
     } else if (!document.hidden) {
       updateSessionTimer(latestSnap);
@@ -397,6 +445,7 @@ async function bootstrap() {
   const initRes = await api.pollSnapshot("");
   lastSnapshotHash = initRes.hash;
   if (initRes.snapshot) {
+    initRes.snapshot.active_project = initRes.snapshot.all_projects[0] || null;
     latestSnap = initRes.snapshot;
     updateTopbar(initRes.snapshot);
     officeView?.update(initRes.snapshot);

@@ -8,17 +8,19 @@ mod remote;
 use crate::dictation::{RecorderState, SharedRecorder};
 use crate::models::{
     ActionResult, AppSettings, ArchiveOverview, GraphData, MemoryStats, NoteContent,
-    OfficeSnapshot, PollSnapshotResult,
+    OfficeSnapshot, PollSnapshotResult, SnapshotDelta,
 };
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 use tauri::State;
 
 struct AppState {
     settings: RwLock<AppSettings>,
     recorder: SharedRecorder,
+    last_snapshot: Mutex<Option<(String, OfficeSnapshot)>>,
 }
 
 fn expand_tilde(p: &str) -> PathBuf {
@@ -200,6 +202,58 @@ fn snapshot_hash(snap: &OfficeSnapshot) -> u64 {
     h.finish()
 }
 
+fn build_delta(prev: &OfficeSnapshot, next: &OfficeSnapshot) -> SnapshotDelta {
+    let mut agent_logs = BTreeMap::new();
+    for (rol, lines) in &next.agent_logs {
+        if prev.agent_logs.get(rol) != Some(lines) {
+            agent_logs.insert(rol.clone(), lines.clone());
+        }
+    }
+    for rol in prev.agent_logs.keys() {
+        if !next.agent_logs.contains_key(rol) {
+            agent_logs.insert(rol.clone(), Vec::new());
+        }
+    }
+
+    SnapshotDelta {
+        connected: next.connected,
+        error: next.error.clone(),
+        profile_name: next.profile_name.clone(),
+        mode: next.mode.clone(),
+        service_status: next.service_status.clone(),
+        paused: next.paused,
+        manager_session: next.manager_session.clone(),
+        message_queue_count: next.message_queue_count,
+        manager_context: next.manager_context.clone(),
+        quotas: next.quotas.clone(),
+        active_agents: next.active_agents.clone(),
+        assigned_models: next.assigned_models.clone(),
+        jobs: next.jobs.clone(),
+        timestamp: next.timestamp,
+        agent_logs,
+        events_log: if next.events_log != prev.events_log {
+            Some(next.events_log.clone())
+        } else {
+            None
+        },
+        system_log: if next.system_log != prev.system_log {
+            Some(next.system_log.clone())
+        } else {
+            None
+        },
+        messages: if next.messages != prev.messages {
+            Some(next.messages.clone())
+        } else {
+            None
+        },
+        all_projects: if next.all_projects != prev.all_projects {
+            Some(next.all_projects.clone())
+        } else {
+            None
+        },
+    }
+}
+
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> AppSettings {
     state.settings.read().unwrap().clone()
@@ -209,6 +263,7 @@ fn get_settings(state: State<'_, AppState>) -> AppSettings {
 fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<(), String> {
     config::save_settings(&settings)?;
     *state.settings.write().unwrap() = settings;
+    *state.last_snapshot.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
 }
 
@@ -254,16 +309,34 @@ async fn poll_snapshot(
     };
     let hash = format!("{:016x}", snapshot_hash(&snap));
     if !last_hash.is_empty() && hash == last_hash {
-        Ok(PollSnapshotResult {
+        return Ok(PollSnapshotResult {
             hash,
             snapshot: None,
-        })
-    } else {
-        Ok(PollSnapshotResult {
-            hash,
-            snapshot: Some(snap),
-        })
+            delta: None,
+        });
     }
+
+    let mut cache = state.last_snapshot.lock().unwrap_or_else(|e| e.into_inner());
+    if !last_hash.is_empty() {
+        if let Some((prev_hash, prev_snap)) = cache.as_ref() {
+            if prev_hash == &last_hash {
+                let delta = build_delta(prev_snap, &snap);
+                *cache = Some((hash.clone(), snap));
+                return Ok(PollSnapshotResult {
+                    hash,
+                    snapshot: None,
+                    delta: Some(delta),
+                });
+            }
+        }
+    }
+
+    *cache = Some((hash.clone(), snap.clone()));
+    Ok(PollSnapshotResult {
+        hash,
+        snapshot: Some(snap),
+        delta: None,
+    })
 }
 
 #[tauri::command]
@@ -425,6 +498,7 @@ pub fn run() {
         .manage(AppState {
             settings: RwLock::new(initial_settings),
             recorder: SharedRecorder::new(RecorderState::default()),
+            last_snapshot: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -445,4 +519,89 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("App Fabrikası Ofisi başlatılamadı");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ChatMessage, ProjectInfo};
+
+    fn sample_snap() -> OfficeSnapshot {
+        let mut agent_logs = BTreeMap::new();
+        agent_logs.insert("kod_ajani".to_string(), vec!["l1".to_string()]);
+        agent_logs.insert("test_ajani".to_string(), vec!["t1".to_string()]);
+        OfficeSnapshot {
+            connected: true,
+            error: None,
+            profile_name: "VDS".to_string(),
+            mode: "remote".to_string(),
+            service_status: "active".to_string(),
+            paused: false,
+            manager_session: None,
+            message_queue_count: 0,
+            manager_context: None,
+            quotas: vec![],
+            active_agents: BTreeMap::new(),
+            assigned_models: BTreeMap::new(),
+            agent_logs,
+            events_log: vec!["e1".to_string()],
+            system_log: vec!["s1".to_string()],
+            messages: vec![ChatMessage {
+                id: 1,
+                yon: "gelen".to_string(),
+                metin: "merhaba".to_string(),
+                zaman: 1.0,
+                kanal: "ofis".to_string(),
+                kaynak: "sahip".to_string(),
+            }],
+            jobs: vec![],
+            active_project: None,
+            all_projects: vec![ProjectInfo {
+                ad: "TestApp".to_string(),
+                klasor: "/tmp/test".to_string(),
+                asama: "gelistirme".to_string(),
+                asama_adi: "Geliştirme".to_string(),
+                su_an: None,
+                expo_url: None,
+                figma_url: None,
+                gorevler: vec![],
+                gorseller: vec![],
+                olusturma: None,
+            }],
+            timestamp: 100.0,
+        }
+    }
+
+    #[test]
+    fn delta_omits_unchanged_heavy_fields() {
+        let prev = sample_snap();
+        let mut next = sample_snap();
+        next.agent_logs
+            .get_mut("kod_ajani")
+            .unwrap()
+            .push("l2".to_string());
+
+        let delta = build_delta(&prev, &next);
+        assert_eq!(delta.agent_logs.len(), 1);
+        assert!(delta.agent_logs.contains_key("kod_ajani"));
+        assert!(!delta.agent_logs.contains_key("test_ajani"));
+        assert!(delta.events_log.is_none());
+        assert!(delta.system_log.is_none());
+        assert!(delta.messages.is_none());
+        assert!(delta.all_projects.is_none());
+
+        let json = serde_json::to_string(&delta).unwrap();
+        assert!(!json.contains("all_projects"));
+        assert!(!json.contains("messages"));
+        assert!(!json.contains("test_ajani"));
+    }
+
+    #[test]
+    fn snapshot_skips_duplicate_active_project_on_serialize() {
+        let mut snap = sample_snap();
+        snap.active_project = snap.all_projects.first().cloned();
+        let json = serde_json::to_string(&snap).unwrap();
+        assert!(!json.contains("\"active_project\""));
+        assert!(json.contains("\"all_projects\""));
+    }
 }
