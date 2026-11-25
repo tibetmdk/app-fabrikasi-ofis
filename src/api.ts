@@ -11,10 +11,18 @@ import type {
   PollSnapshotResult,
 } from "./types";
 
+export interface InstallInfo {
+  os: string;
+  bundle_type: string;
+  safe_self_update: boolean;
+  reason?: string | null;
+}
+
 export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
   saveSettings: (settings: AppSettings) => invoke<void>("save_settings", { settings }),
   getMemoryStats: () => invoke<MemoryStats>("get_memory_stats"),
+  getInstallInfo: () => invoke<InstallInfo>("get_install_info"),
   getSnapshot: () => invoke<OfficeSnapshot>("get_snapshot"),
   pollSnapshot: (lastHash: string) =>
     invoke<PollSnapshotResult>("poll_snapshot", { lastHash }),

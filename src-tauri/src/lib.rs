@@ -637,6 +637,71 @@ async fn test_connection(profile: models::ConnectionProfile) -> ActionResult {
     }
 }
 
+#[derive(serde::Serialize)]
+struct InstallInfo {
+    os: String,
+    bundle_type: String,
+    safe_self_update: bool,
+    reason: Option<String>,
+}
+
+fn resolve_bundle_type_label(
+    bundle: Option<tauri::utils::config::BundleType>,
+    is_appimage_env: bool,
+) -> &'static str {
+    use tauri::utils::config::BundleType;
+    match bundle {
+        Some(BundleType::Deb) => "deb",
+        Some(BundleType::Rpm) => "rpm",
+        Some(BundleType::AppImage) => "appimage",
+        Some(BundleType::Msi) => "msi",
+        Some(BundleType::Nsis) => "nsis",
+        Some(BundleType::App) => "app",
+        Some(BundleType::Dmg) => "dmg",
+        None if is_appimage_env => "appimage",
+        None => "standalone",
+    }
+}
+
+fn evaluate_install_info(
+    os: &str,
+    bundle: Option<tauri::utils::config::BundleType>,
+    is_appimage_env: bool,
+) -> InstallInfo {
+    let bundle_label = resolve_bundle_type_label(bundle, is_appimage_env);
+    // On Linux, tauri-plugin-updater falls back to downloading an AppImage and overwriting the
+    // running binary in-place whenever bundle_type() is None (standalone / --no-bundle build).
+    // On Ubuntu 24.04+/26.04 without libfuse2, overwriting a native ELF binary with an AppImage
+    // breaks launching completely. Block in-place self-update for standalone Linux binaries.
+    let (safe_self_update, reason) = if os == "linux" && bundle_label == "standalone" {
+        (
+            false,
+            Some(
+                "Yerel tek-dosya sürümünde otomatik güncelleme Linux'ta AppImage üzerine yazıp açılmamaya yol açabildiği için engellendi. Tek tıkla güncelleme için .deb paketini kurun."
+                    .to_string(),
+            ),
+        )
+    } else {
+        (true, None)
+    };
+
+    InstallInfo {
+        os: os.to_string(),
+        bundle_type: bundle_label.to_string(),
+        safe_self_update,
+        reason,
+    }
+}
+
+#[tauri::command]
+fn get_install_info() -> InstallInfo {
+    evaluate_install_info(
+        std::env::consts::OS,
+        tauri::utils::platform::bundle_type(),
+        std::env::var_os("APPIMAGE").is_some(),
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_settings = config::load_settings();
@@ -652,6 +717,7 @@ pub fn run() {
             get_settings,
             save_settings,
             get_memory_stats,
+            get_install_info,
             get_snapshot,
             poll_snapshot,
             get_full_log,
@@ -770,5 +836,24 @@ mod tests {
         let mut desc = collect_descendant_pids(100, &pairs);
         desc.sort();
         assert_eq!(desc, vec![200, 201, 202, 300]);
+    }
+
+    #[test]
+    fn linux_standalone_blocks_unsafe_appimage_overwrite() {
+        let standalone = evaluate_install_info("linux", None, false);
+        assert_eq!(standalone.bundle_type, "standalone");
+        assert!(!standalone.safe_self_update);
+        assert!(standalone.reason.is_some());
+
+        let deb = evaluate_install_info("linux", Some(tauri::utils::config::BundleType::Deb), false);
+        assert_eq!(deb.bundle_type, "deb");
+        assert!(deb.safe_self_update);
+
+        let appimage = evaluate_install_info("linux", None, true);
+        assert_eq!(appimage.bundle_type, "appimage");
+        assert!(appimage.safe_self_update);
+
+        let win = evaluate_install_info("windows", None, false);
+        assert!(win.safe_self_update);
     }
 }

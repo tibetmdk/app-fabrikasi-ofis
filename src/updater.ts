@@ -1,8 +1,20 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { api, type InstallInfo } from "./api";
 
 let pendingUpdate: Update | null = null;
 let installing = false;
+let cachedInstallInfo: InstallInfo | null = null;
+
+async function getInstallInfoSafe(): Promise<InstallInfo | null> {
+  if (cachedInstallInfo) return cachedInstallInfo;
+  try {
+    cachedInstallInfo = await api.getInstallInfo();
+    return cachedInstallInfo;
+  } catch {
+    return null;
+  }
+}
 
 export async function checkForUpdates(
   showToast: (msg: string, err?: boolean) => void,
@@ -13,10 +25,14 @@ export async function checkForUpdates(
     const btn = document.querySelector("#btn-update") as HTMLButtonElement | null;
     if (update) {
       pendingUpdate = update;
+      const info = await getInstallInfoSafe();
       if (btn) {
         btn.style.display = "inline-flex";
         btn.textContent = `⬆️ v${update.version} Güncelle`;
-        btn.title = `Yeni sürüm hazır (v${update.version}) — tıklayıp güncelle`;
+        btn.title =
+          info && !info.safe_self_update && info.reason
+            ? info.reason
+            : `Yeni sürüm hazır (v${update.version}) — tıklayıp güncelle`;
       }
       showToast(`Yeni sürüm mevcut: v${update.version}`);
       return true;
@@ -35,6 +51,17 @@ export async function checkForUpdates(
 
 export async function installPendingUpdate(showToast: (msg: string, err?: boolean) => void) {
   if (!pendingUpdate || installing) return;
+
+  const info = await getInstallInfoSafe();
+  if (info && !info.safe_self_update) {
+    showToast(
+      info.reason ||
+        "Yerel tek-dosya sürümü doğrudan güncellenemez. Lütfen .deb paketiyle kurun.",
+      true
+    );
+    return;
+  }
+
   const btn = document.querySelector("#btn-update") as HTMLButtonElement | null;
   installing = true;
   if (btn) {

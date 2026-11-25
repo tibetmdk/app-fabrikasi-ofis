@@ -16,9 +16,10 @@ Kullanıcı bu uygulamaya yeni bir özellik, arayüz iyileştirmesi veya hata d�
    npm run build
    python3 -m py_compile server/kopru.py
    ```
-3. Ubuntu'daki yerel masaüstü uygulamasını (`./baslat.sh`) güncellemek için release binary'sini derle:
+3. Ubuntu'daki yerel masaüstü uygulamasını kalıcı kurmak/güncellemek için `.deb` paketini derle ve kur (masaüstü kısayolu asla `src-tauri/target/` içine yönlendirilmemelidir; ayrıca `.deb` kurulumu uygulama içi tek tıkla güncellemelerin AppImage yerine `.deb` üzerinden sorunsuz çalışmasını sağlar):
    ```bash
-   npm run tauri build -- --no-bundle
+   npm run tauri build -- --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+   sudo dpkg -i src-tauri/target/release/bundle/deb/*.deb
    ```
 
 ### B. Yeni Sürüm Yayınlama (Windows & Linux Otomatik Güncelleme)
@@ -65,6 +66,10 @@ Değişikliklerin Windows ve diğer cihazlara **tek tıkla güncelleme** (`⬆�
 ---
 
 ## 3. Sürüm ve Değişiklik Günlüğü
+
+### `v1.3.2` — 2026-11-25
+- **Linux otomatik güncelleme açılmama koruması (`src-tauri/src/lib.rs`, `src/api.ts`, `src/updater.ts`):** `get_install_info` komutu eklendi; Linux'ta paketlenmemiş (`standalone`) yerel derlemelerde güncelleyicinin çalışan binary'nin üzerine AppImage yazarak uygulamayı açılmaz hale getirmesi engellendi (`.deb` / `.rpm` / AppImage / Windows kurulumlarında otomatik güncelleme normal şekilde çalışır).
+- **Ubuntu `.deb` güncelleme ve masaüstü kısayolu sertleştirmesi (`src-tauri/linux/postinst.sh`, `src-tauri/linux/postrm.sh`, `src-tauri/linux/app-fabrikasi-ofis.desktop.hbs`, `baslat.sh`):** `pkexec dpkg -i` üzerinden yapılan uygulama içi güncellemelerde kullanıcı tespiti için `PKEXEC_UID` desteği, eski yerel `src-tauri/target/` / `.local/bin` `.desktop` çakışmalarının otomatik temizlenmesi ve `.desktop` şablonunda tam `/usr/bin/` yolu eklendi.
 
 ### `v1.3.1` — 2026-11-24
 - **v1.3.0 canlı kod/diff izleyici ve akış animasyonu geri alındı (`src/views/office.ts`, `src/styles/main.css`, `src-tauri/src/*`, `server/kopru.py`):** Ajan odak modu tekrar temiz tek-panel (`v1.2.0`) tasarımına döndürüldü; kullanılmayan `/api/project-file` ve `/api/project-diff` uç noktaları kaldırıldı.

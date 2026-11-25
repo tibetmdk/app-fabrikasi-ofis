@@ -6,3 +6,4 @@ src-tauri/target/
 __pycache__/
 *.pyc
 VDS_KURULUM_PROMPT.md
+dist-paketler/
